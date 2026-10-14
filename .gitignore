@@ -16,3 +16,17 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Runtime logs
+logs/
+*.log
+
+# Local configuration and credentials
+.aws/
+credentials
+*.pem
+*.key
+
+# Local PostgreSQL / Airflow runtime
+pgdata/
+airflow-data/

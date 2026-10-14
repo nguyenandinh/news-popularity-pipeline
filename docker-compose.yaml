@@ -1,0 +1,86 @@
+
+services:
+
+  airflow-dag-processor:
+    image: apache/airflow:3.1.2
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres-airflow/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY}
+      AIRFLOW__CORE__DAG_DISCOVERY_SAFE_MODE: "true"
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/project/src:ro
+      - ./data:/opt/airflow/project/data:ro
+    command: airflow dag-processor
+
+  postgres-airflow:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+
+  airflow:
+    image: apache/airflow:3.1.2
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres-airflow/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY}
+      AIRFLOW__CORE__TEST_CONNECTION: "Enabled"
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./plugins:/opt/airflow/plugins
+      - ./src:/opt/airflow/project/src:ro
+      - ./data:/opt/airflow/project/data:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate || exit 1
+        airflow api-server --port 8080 &
+        exec airflow scheduler
+
+  etl:
+    build:
+      context: .
+      dockerfile: docker/etl/Dockerfile
+    environment:
+      PGHOST: host.docker.internal
+      PGPORT: "5432"
+      PGDATABASE: news_popularity_dw
+      PGUSER: postgres
+    volumes:
+      - ./src:/app/src:ro
+      - ./data:/app/data
+    working_dir: /app
+    command: sleep infinity
+
+volumes:
+  airflow_postgres_data:
